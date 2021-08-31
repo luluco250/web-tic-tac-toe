@@ -1,3 +1,5 @@
+import { StateTracker } from "./state-tracker.mjs";
+
 /**
  * Dummy HTML tag function for syntax highlighters.
  * @returns {string} The original raw string.
@@ -67,9 +69,13 @@ export class TicTacToeElement extends HTMLElement {
 			shadow.getElementById("se"),
 		];
 
-		/** @type {number[][]} */
-		this._history = [[0, 0, 0, 0, 0, 0, 0, 0, 0]];
-		this._historyIndex = 0;
+		this._stateTracker = new StateTracker({
+			onChange: () => this._render(),
+			initialState: {
+				cells: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+				isPlayerOne: true,
+			},
+		});
 
 		/** @type {boolean} */
 		this._firstPlayer = true;
@@ -100,15 +106,17 @@ export class TicTacToeElement extends HTMLElement {
 	 */
 	markCell(indexOrX, y) {
 		const index = this._getIndex(indexOrX, y);
-		const cells = this._getCells().slice();
+		let cells = this._getCells();
 
 		if (cells[index] !== 0)
 			return;
 
+		cells = cells.slice();
 		cells[index] = this.isPlayerOne ? 1 : 2;
-		this._rewriteHistory(cells);
-		this._renderAt(cells, index);
-		this._switchPlayers();
+		this._stateTracker.push({
+			cells,
+			isPlayerOne: !this.isPlayerOne,
+		});
 	}
 
 	/**
@@ -117,61 +125,49 @@ export class TicTacToeElement extends HTMLElement {
 	 */
 	clearCell(indexOrX, y) {
 		const index = this._getIndex(indexOrX, y);
-		const cells = this._getCells().slice();
+		let cells = this._getCells();
 		const value = cells[index];
 
 		if (value === 0)
 			return;
 
+		cells = cells.slice();
 		cells[index] = 0;
-		this._rewriteHistory(cells);
-		this._renderAt(cells, index);
-		this._isPlayerOne = value === 1;
+		this._stateTracker.push({
+			cells,
+			isPlayerOne: value === 1,
+		})
 	}
 
 	clear() {
-		this._history = [[0, 0, 0, 0, 0, 0, 0, 0, 0]];
-		this._historyIndex = 0;
-		this._isPlayerOne = true;
-		this._render();
+		this._stateTracker.clear({
+			cells: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+			isPlayerOne: true,
+		});
 	}
 
 	undo() {
-		if (this._historyIndex <= 0)
-			return;
-
-		--this._historyIndex;
-		this._switchPlayers();
-		this._render();
+		this._stateTracker.back();
 	}
 
 	redo() {
-		if (this._historyIndex >= this._history.length - 1)
-			return;
-
-		++this._historyIndex;
-		this._switchPlayers();
-		this._render();
+		this._stateTracker.next();
 	}
 
-	get isPlayerOne() {
-		return this._firstPlayer;
+	_render() {
+		const cells = this._getCells();
+
+		for (let i = 0; i < cells.length; ++i)
+			this._renderAt(cells, i);
 	}
 
-	set _isPlayerOne(value) {
-		this._firstPlayer = value;
-	}
-
-	get isPlayerTwo() {
-		return !this._firstPlayer;
-	}
-
-	set _isPlayerTwo(value) {
-		this._firstPlayer = !value;
-	}
-
-	_switchPlayers() {
-		this._firstPlayer = !this._firstPlayer;
+	_renderAt(cells, index) {
+		const value = cells[index];
+		this._buttons[index].innerHTML = (
+			value === 1 ? "❌" :
+			value === 2 ? "⭕" :
+			""
+		);
 	}
 
 	/**
@@ -182,29 +178,20 @@ export class TicTacToeElement extends HTMLElement {
 		return y === undefined ? indexOrX : y * 3 + indexOrX;
 	}
 
-	_render() {
-		const cells = this._getCells();
-
-		for (let i = 0; i < cells.length; ++i) {
-			this._renderAt(cells, i);
-		}
-	}
-
-	_renderAt(cells, index) {
-		const value = cells[index];
-		this._buttons[index].innerHTML = value === 1 ? "❌" : value === 2 ? "⭕" : "";
-	}
-
-	_rewriteHistory(cells) {
-		if (this._historyIndex < this._history.length - 1)
-			this._history.splice(this._historyIndex + 1)
-
-		this._history.push(cells);
-		++this._historyIndex;
+	_getState() {
+		return this._stateTracker.current;
 	}
 
 	_getCells() {
-		return this._history[this._historyIndex];
+		return this._getState().cells;
+	}
+
+	get isPlayerOne() {
+		return this._stateTracker.current.isPlayerOne;
+	}
+
+	get isPlayerTwo() {
+		return !this.isPlayerOne();
 	}
 }
 
